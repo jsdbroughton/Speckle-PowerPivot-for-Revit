@@ -1,5 +1,5 @@
 <h1 align="center">
-  <img valign="middle" src="https://github.com/user-attachments/assets/bdf3275f-17a5-48cd-bb2d-2adb87f7ee8a" height="100" />&nbsp;&nbsp;<img valign="middle" src="https://speckle.systems/content/images/2022/06/logo-blue-2.png" height="50px" /><br/>
+  <img valign="middle" src="https://github.com/user-attachments/assets/daa7f223-8f9b-43e5-a390-fb2b36819c58" height="100" />&nbsp;&nbsp;<img valign="middle" src="https://speckle.systems/content/images/2022/06/logo-blue-2.png" height="50px" /><br/>
   Speckle PowerPivot for Revit
 </h1>
 
