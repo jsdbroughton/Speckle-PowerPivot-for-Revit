@@ -1,3 +1,6 @@
+using Speckle.Core.Api.GraphQL.Models;
+using SpecklePowerPivotForRevit;
+
 namespace TestAutomateFunction;
 
 using Speckle.Automate.Sdk;
@@ -8,19 +11,21 @@ using Speckle.Core.Credentials;
 [TestFixture]
 public sealed class AutomationContextTest : IDisposable
 {
-
-  private Client client;
-  private Account account;
+  private Client _client;
+  private Account _account;
 
   [OneTimeSetUp]
   public void Setup()
   {
-    account = new Account
+    _account = new Account
     {
       token = TestAutomateEnvironment.GetSpeckleToken(),
-      serverInfo = new ServerInfo { url = TestAutomateEnvironment.GetSpeckleServerUrl().ToString() }
+      serverInfo = new ServerInfo
+      {
+        url = TestAutomateEnvironment.GetSpeckleServerUrl().ToString()
+      }
     };
-    client = new Client(account);
+    _client = new Client(_account);
   }
 
   [Test]
@@ -28,15 +33,16 @@ public sealed class AutomationContextTest : IDisposable
   {
     var inputs = new FunctionInputs
     {
-      SpeckleTypeToCount = "Base",
-      SpeckleTypeTargetCount = 1
+      ResolveInstances = true,
+      PropagateNamedProperties = true,
+      TargetModelPrefix = "bi-ready"
     };
 
-    var automationRunData = await TestAutomateUtils.CreateTestRun(client);
+    var automationRunData = await TestAutomateUtils.CreateTestRun(_client);
     var automationContext = await AutomationRunner.RunFunction(
       AutomateFunction.Run,
       automationRunData,
-      account.token,
+      _account.token,
       inputs
     );
 
@@ -45,7 +51,7 @@ public sealed class AutomationContextTest : IDisposable
 
   public void Dispose()
   {
-    client.Dispose();
+    _client.Dispose();
     TestAutomateEnvironment.Clear();
   }
 }
