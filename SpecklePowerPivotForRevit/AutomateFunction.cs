@@ -1,64 +1,131 @@
 using Objects;
+using Objects.BuiltElements.Revit;
 using Speckle.Automate.Sdk;
-using Speckle.Core.Api.GraphQL.Models;
+using Speckle.Core.Models;
+using Speckle.Core.Models.GraphTraversal;
 
 namespace SpecklePowerPivotForRevit;
 
 public static class AutomateFunction
 {
-  public static async Task Run(
+  internal static bool ResolveInstances;
+  private static bool _sPropagateNamedProperties;
+  private static string _sTargetModelPrefix = null!;
+  internal static bool PrefixMergedDefinitionProperties;
+
+  public async static Task Run(
     AutomationContext automationContext,
     FunctionInputs functionInputs
   )
   {
-    Console.WriteLine("Starting execution");
-    _ = typeof(ObjectsKit).Assembly; // INFO: Force objects kit to initialize
+    ResolveInstances = functionInputs.ResolveInstances;
+    _sPropagateNamedProperties = functionInputs.PropagateNamedProperties;
+    _sTargetModelPrefix = functionInputs.TargetModelPrefix;
+    PrefixMergedDefinitionProperties = functionInputs.PrefixMergedDefinitionProperties;
+    try
+    {
+      Console.WriteLine("Starting execution");
+      _ = typeof(ObjectsKit).Assembly; // INFO: Force objects kit to initialize
 
-    Console.WriteLine("Receiving version");
-    var versionObject = await automationContext.ReceiveVersion();
+      Console.WriteLine("Receiving version");
+      var versionObject = await automationContext.ReceiveVersion();
 
-    // Get the source model name
-    var sourceModelName = await TriggerModelName(automationContext);
+      var objects = FlattenAndProcessObjects(versionObject);
 
-    // Generate the target model name
-    var targetModelName = GenerateTargetModelName(
-      sourceModelName,
-      functionInputs.TargetModelPrefix
-    );
+      if (_sPropagateNamedProperties)
+      {
+        Console.WriteLine("Propagating named properties");
+        objects = PropagateNamedProperties(objects);
+      }
 
-    Console.WriteLine("Generated target model name: " + targetModelName);
-    Console.WriteLine("Received version: " + versionObject);
+      // Get the source model name
+      var sourceModelName = await Models.TriggerModelName(automationContext);
 
-    automationContext.MarkRunSuccess($"Targeting Model: {targetModelName}");
+      // Generate the target model name
+      var targetModelName = Models.GenerateTargetModelName(
+        sourceModelName,
+        _sTargetModelPrefix
+      );
+
+      var newData = Commit.CommitObject(objects);
+
+      var newVersion = await automationContext.CreateNewVersionInProject(
+        newData,
+        targetModelName,
+        "Data from PowerPivot for Revit"
+      );
+
+      automationContext.SetContextView(new List<string> { newVersion }, false);
+
+      Console.WriteLine("Generated target model name: " + targetModelName);
+      Console.WriteLine("Received version: " + versionObject);
+      Console.WriteLine("Created new version: " + newVersion);
+
+      automationContext.MarkRunSuccess($"Created new version: {newVersion}");
+    }
+    catch (Exception e)
+    {
+      Console.WriteLine("Error: " + e.Message);
+      automationContext.MarkRunException(e.Message);
+    }
   }
 
-  private static async Task<string> TriggerModelName(
-    AutomationContext automationContext
-  )
+  private static List<Base> PropagateNamedProperties(List<Base> objects)
   {
-    var modelId = automationContext.AutomationRunData.Triggers[0].Payload.ModelId;
-    var versionId = automationContext.AutomationRunData.Triggers[0].Payload.VersionId;
-    var projectId = automationContext.AutomationRunData.ProjectId;
+    foreach (var obj in objects)
+    {
+      var newParameters = new Base();
+      var existingParameters = obj["parameters"] as Base;
 
-    Console.WriteLine($"Project ID: {projectId}");
-    Console.WriteLine($"Version ID: {versionId}");
+      if (existingParameters != null)
+      {
+        foreach (
+          var prop in existingParameters
+            .GetMembers(DynamicBaseMemberType.InstanceAll)
+            .Where(prop => !Processor.PropsToSkip.Contains(prop.Key))
+        )
+        {
+          newParameters[prop.Key] = prop.Value;
+        }
 
-    var client = automationContext.SpeckleClient;
+        foreach (
+          var prop in existingParameters
+            .GetMembers(DynamicBaseMemberType.Dynamic)
+            .Where(prop => !Processor.PropsToSkip.Contains(prop.Key))
+        )
+        {
+          if (prop.Value is Parameter parameter)
+          {
+            var newPropName = DynamicBase.RemoveDisallowedPropNameChars(parameter.name);
 
-    return (await client.Model.Get(modelId, projectId)).name;
+            if (string.IsNullOrEmpty(parameter.name))
+            {
+              continue;
+            }
+
+            newParameters[newPropName] = parameter;
+          }
+          else
+          {
+            newParameters[prop.Key] = prop.Value;
+          }
+        }
+      }
+
+      obj["parameters"] = newParameters;
+    }
+
+    return objects;
   }
 
-  private static string GenerateTargetModelName(string sourceModelName, string prefix)
+  private static List<Base> FlattenAndProcessObjects(Base versionObject)
   {
-    // Ensure the prefix doesn't start with a slash
-    prefix = prefix.TrimStart('/');
+    var traversal = DefaultTraversal.CreateTraversalFunc();
+    var traversalContexts = traversal.Traverse(versionObject);
 
-    // Split the source model name into parts
-    var parts = sourceModelName.Split('/', StringSplitOptions.RemoveEmptyEntries);
-
-    // Combine the prefix with the original model path
-    var targetModelName = $"{prefix}/{string.Join("/", parts)}";
-
-    return targetModelName;
+    return traversalContexts
+      .Select(tc => Processor.ProcessObject(tc.Current))
+      .Where(obj => obj != null) // Filter out nulls
+      .ToList()!;
   }
 }

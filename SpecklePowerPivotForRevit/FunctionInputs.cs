@@ -24,6 +24,12 @@ public struct FunctionInputs
   public bool PropagateNamedProperties { get; set; }
 
   /// <summary>
+  /// Indicates whether named properties should be propagated. Default is true.
+  /// </summary>
+  [DefaultValue(true)]
+  public bool PrefixMergedDefinitionProperties { get; set; }
+
+  /// <summary>
   /// Specifies the prefix for the output branch. Default is "PowerBI-Ready".
   /// </summary>
   [DefaultValue("bi-ready")]
